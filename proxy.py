@@ -181,6 +181,27 @@ class ProxyServer:
                 s.sendall(data)
                 logging.info('responded to a preflight request')
                 return
+            
+            try:
+                head_text = head_raw.decode('utf8', errors='ignore')
+                # 1. Replace header to fix port mismatch
+                head_text = head_text.replace('21931', '23119')
+                # 2. Replace or add Content-Type
+                lines = head_text.split('\r\n')
+                found = False
+                for i in range(len(lines)):
+                    if lines[i].lower().startswith('content-type:'):
+                        lines[i] = 'Content-Type: application/json'
+                        found = True
+                        break
+                if not found:
+                    lines.insert(1, 'Content-Type: application/json')
+                head_text = '\r\n'.join(lines)
+                # 3. Reconstruct the data packet to send to Zotero
+                data = head_text.encode('utf8') + b'\r\n\r\n' + body_raw
+            except Exception as e:
+                logging.error('Header rewrite failed: {}'.format(e))
+
         else:
             logging.info('message received from zotero')
             # CORS
