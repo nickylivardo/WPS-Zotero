@@ -184,21 +184,41 @@ class ProxyServer:
             
             try:
                 head_text = head_raw.decode('utf8', errors='ignore')
-                # 1. Replace header to fix port mismatch
-                head_text = head_text.replace('21931', '23119')
-                # 2. Replace or add Content-Type
+                
+                # 1. Clean the JSON body
+                body_clean = body_raw.strip()
+                
+                # 2. Rebuild headers
                 lines = head_text.split('\r\n')
-                found = False
-                for i in range(len(lines)):
-                    if lines[i].lower().startswith('content-type:'):
-                        lines[i] = 'Content-Type: application/json'
-                        found = True
-                        break
-                if not found:
-                    lines.insert(1, 'Content-Type: application/json')
-                head_text = '\r\n'.join(lines)
-                # 3. Reconstruct the data packet to send to Zotero
-                data = head_text.encode('utf8') + b'\r\n\r\n' + body_raw
+                new_lines = [lines[0]]
+                
+                for line in lines[1:]:
+                    if not line.strip(): continue
+                    lower_line = line.lower()
+                    
+                    # Strip headers
+                    if lower_line.startswith('host:') or \
+                       lower_line.startswith('content-length:') or \
+                       lower_line.startswith('content-type:') or \
+                       lower_line.startswith('origin:') or \
+                       lower_line.startswith('sec-'):
+                        continue
+                    new_lines.append(line)
+                
+                # 3. Inject Anti-CSRF headers and metadata
+                new_lines.append('Host: 127.0.0.1:23119')
+                new_lines.append('Content-Type: application/json')
+                new_lines.append('Content-Length: {}'.format(len(body_clean)))
+                new_lines.append('Origin: chrome-extension://ekhagklcjbdpajgpjgmbionohlpdbjgc')
+                new_lines.append('Zotero-Allowed-Request: true')
+                new_lines.append('Zotero-Connector-Version: 5.0.120')
+                new_lines.append('X-Zotero-Connector-API-Version: 2.0')
+                
+                head_text = '\r\n'.join(new_lines)
+                
+                # 4. Reconstruct data packet
+                data = head_text.encode('utf8') + b'\r\n\r\n' + body_clean
+                
             except Exception as e:
                 logging.error('Header rewrite failed: {}'.format(e))
 
